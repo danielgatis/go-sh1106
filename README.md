@@ -9,7 +9,7 @@
 
 A Go library for controlling SH1106 OLED displays with text rendering capabilities.
 
-<video src="demo.mp4" controls width="600"></video>
+[<video src="demo.mp4" controls width="600"></video>](https://github.com/user-attachments/assets/6c657a5c-2fcd-41a2-b957-916cb8a23586)
 
 https://www.waveshare.com/1.3inch-oled-hat.htm
 
