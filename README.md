@@ -16,7 +16,8 @@ https://www.waveshare.com/1.3inch-oled-hat.htm
 ## Features
 
 - **SH1106 Display Driver**: Full support for SH1106 OLED displays via SPI
-- **Text Rendering**: BDF font support for text rendering
+- **Text Rendering**: BDF font support with embedded font option
+- **Joystick Support**: Complete joystick/button handling with callbacks
 - **Easy Integration**: Simple API for quick integration
 - **Examples**: Complete examples showing different usage patterns
 
@@ -61,8 +62,8 @@ func main() {
     })
     defer dev.Halt()
     
-    // Create text renderer
-    textRenderer, _ := text.NewRenderer("font.bdf", &text.Config{
+    // Create text renderer with embedded font
+    textRenderer, _ := text.NewRendererWithEmbeddedFont(&text.Config{
         Width:     128,
         Height:    64,
         LineCount: 6,
@@ -86,12 +87,73 @@ sudo raspi-config
 # Navigate to: Interfacing Options > SPI > Enable
 ```
 
+## Packages
+
+### Display Package (`pkg/display`)
+SH1106 OLED display driver with SPI support.
+
+### Text Package (`pkg/text`)
+Text rendering with BDF font support and embedded font option.
+
+```go
+// With embedded font (no external file needed)
+renderer, _ := text.NewRendererWithEmbeddedFont(&text.Config{
+    Width:     128,
+    Height:    64,
+    LineCount: 6,
+})
+
+// Or with custom BDF font file
+renderer, _ := text.NewRenderer("path/to/font.bdf", &text.Config{
+    Width:     128,
+    Height:    64,
+    LineCount: 6,
+})
+```
+
+### Joystick Package (`pkg/joystick`)
+Complete joystick/button event handling with multiple callback support.
+
+```go
+import "github.com/danielgatis/go-sh1106/pkg/joystick"
+
+// Create joystick
+joy := joystick.NewJoystick(upPin, downPin, leftPin, rightPin, btn1, btn2, btn3)
+
+// Register multiple callbacks (returns remove function)
+remove1 := joy.OnClickUp(func() {
+    fmt.Println("UP clicked - Callback 1")
+})
+
+remove2 := joy.OnClickUp(func() {
+    fmt.Println("UP clicked - Callback 2")
+})
+
+// Configure
+joy.SetHoldDuration(500 * time.Millisecond)
+joy.SetPollInterval(50 * time.Millisecond)
+
+// Start polling
+joy.Start()
+defer joy.Stop()
+
+// Remove specific callback
+remove1()
+```
+
+**Supported Events:**
+- `OnClick[Button]()` - Triggered on button press
+- `OnHold[Button]()` - Triggered when button held (default 500ms)
+- `OnRelease[Button]()` - Triggered on button release
+
+**Available Buttons:** `Up`, `Down`, `Left`, `Right`, `Button1`, `Button2`, `Button3`
+
 ## Examples
 
-### Basic Usage
+### Basic Display Example
 ```bash
 cd examples/basic
-go run main.go
+go run main.go "YOUR MESSAGE"
 ```
 
 ### Animation Example
@@ -99,6 +161,25 @@ go run main.go
 cd examples/animation
 go run main.go
 ```
+
+### Joystick Example
+```bash
+cd examples/joystick
+go run main.go
+```
+
+### Interactive Menu Example
+Complete example combining display, text rendering, and joystick navigation:
+```bash
+cd examples/interactive
+go run main.go
+```
+
+This example demonstrates:
+- Interactive menu navigation with joystick
+- Real-time display updates
+- Multiple callback handling
+- State management
 
 ## Building for Raspberry Pi
 

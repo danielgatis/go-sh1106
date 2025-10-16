@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"log"
+	"os"
 	"time"
 
 	"github.com/danielgatis/go-sh1106/pkg/display"
@@ -14,6 +15,12 @@ import (
 )
 
 func main() {
+	// Get message from command line argument
+	message := ""
+	if len(os.Args) > 1 {
+		message = os.Args[1]
+	}
+
 	// Load all the drivers
 	if _, err := host.Init(); err != nil {
 		log.Fatal(err)
@@ -62,12 +69,12 @@ func main() {
 
 	// Set some sample text
 	textRenderer.SetTexts([]string{
-		"Wifi: APT 1301",
-		"IP: 192.168.1.100",
-		"Free Space: 55%",
-		"",
-		"Sensor: CO2",
-		"Value: 400ppm",
+		message,
+		message,
+		message,
+		message,
+		message,
+		message,
 	})
 
 	// Draw the text to the display
@@ -76,7 +83,7 @@ func main() {
 	}
 
 	// Keep the display on for 20 seconds
-	time.Sleep(5 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	// Turn off the display
 	dev.Halt()
