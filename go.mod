@@ -6,8 +6,8 @@ require periph.io/x/conn/v3 v3.7.2
 
 require (
 	github.com/zachomedia/go-bdf v0.0.0-20220611021443-a3af701111be
-	golang.org/x/image v0.38.0
+	golang.org/x/image v0.41.0
 	periph.io/x/host/v3 v3.8.5
 )
 
-require golang.org/x/text v0.35.0 // indirect
+require golang.org/x/text v0.37.0 // indirect
