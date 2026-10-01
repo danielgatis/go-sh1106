@@ -53,10 +53,10 @@ func main() {
     // Configure GPIO pins
     dc := gpioreg.ByName("GPIO24")
     rst := gpioreg.ByName("GPIO25")
-    cs := gpioreg.ByName("GPIO8")
     
-    // Create display
-    dev, _ := display.NewSH1106SPI(bus, dc, rst, cs, &display.Options{
+    // Create display. Chip select is CE0, driven by the SPI controller, so cs
+    // is nil; pass a gpio.PinOut only when CS is wired to a plain GPIO.
+    dev, _ := display.NewSH1106SPI(bus, dc, rst, nil, &display.Options{
         Width:  128,
         Height: 64,
     })

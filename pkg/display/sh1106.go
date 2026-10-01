@@ -34,10 +34,14 @@ type Options struct {
 	Height int
 }
 
-// NewSH1106SPI creates a new SH1106 display driver for SPI communication
+// NewSH1106SPI creates a new SH1106 display driver for SPI communication.
+//
+// cs may be nil when the SPI controller drives chip select in hardware (the
+// spidev CE line); the driver then never touches it. Pass a pin only when chip
+// select is wired to a plain GPIO.
 func NewSH1106SPI(p spi.Port, dc, rst, cs gpio.PinOut, opts *Options) (*SH1106, error) {
-	if dc == nil || rst == nil || cs == nil {
-		return nil, errors.New("display: dc, rst, and cs pins are required")
+	if dc == nil || rst == nil {
+		return nil, errors.New("display: dc and rst pins are required")
 	}
 
 	speed := physic.Frequency(1.95 * float64(physic.MegaHertz)) // 1.95MHz
@@ -80,6 +84,7 @@ func (d *SH1106) init() error {
 		0x10, // Set high column address
 		0x40, // Set start line address
 		0x81, // Set contrast control register
+		0x80, // Contrast value (power-on default)
 		0xA0, // Set SEG/Column mapping
 		0xC0, // Set COM/Row scan direction
 		0xA6, // Set normal display
@@ -112,29 +117,30 @@ func (d *SH1106) init() error {
 }
 
 // sendCommand sends a command to the display
-func (d *SH1106) sendCommand(cmd byte) error {
-	if err := d.dc.Out(gpio.Low); err != nil {
-		return err
-	}
-	if err := d.cs.Out(gpio.Low); err != nil {
-		return err
-	}
-	defer d.cs.Out(gpio.High)
-
-	return d.c.Tx([]byte{cmd}, nil)
+func (d *SH1106) sendCommand(cmd ...byte) error {
+	return d.tx(gpio.Low, cmd)
 }
 
 // sendData sends data to the display
 func (d *SH1106) sendData(data []byte) error {
-	if err := d.dc.Out(gpio.High); err != nil {
-		return err
-	}
-	if err := d.cs.Out(gpio.Low); err != nil {
-		return err
-	}
-	defer d.cs.Out(gpio.High)
+	return d.tx(gpio.High, data)
+}
 
-	return d.c.Tx(data, nil)
+// tx sets DC to the given level and writes b, framing it with the software
+// chip select when one was given.
+func (d *SH1106) tx(dc gpio.Level, b []byte) error {
+	if err := d.dc.Out(dc); err != nil {
+		return err
+	}
+
+	if d.cs != nil {
+		if err := d.cs.Out(gpio.Low); err != nil {
+			return err
+		}
+		defer d.cs.Out(gpio.High)
+	}
+
+	return d.c.Tx(b, nil)
 }
 
 // display sends the buffer to the display
@@ -210,9 +216,21 @@ func (d *SH1106) ColorModel() color.Model {
 	return color.GrayModel
 }
 
-// Halt turns off the display
+// Halt turns off the display. The panel stops driving the OLED but keeps its
+// RAM, so Wake shows the last frame again without a redraw.
 func (d *SH1106) Halt() error {
 	return d.sendCommand(0xAE)
+}
+
+// Wake turns the display back on after Halt.
+func (d *SH1106) Wake() error {
+	return d.sendCommand(0xAF)
+}
+
+// SetContrast sets the segment drive current, 0x00 to 0xFF (0x80 after init).
+// Lower values dim the panel and slow OLED wear.
+func (d *SH1106) SetContrast(level byte) error {
+	return d.sendCommand(0x81, level)
 }
 
 // Draw implements display.Drawer
