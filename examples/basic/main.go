@@ -42,13 +42,9 @@ func main() {
 		log.Fatal("GPIO25 not available")
 	}
 
-	cs := gpioreg.ByName("GPIO8")
-	if cs == nil {
-		log.Fatal("GPIO8 not available")
-	}
-
 	// Create SH1106 display driver
-	dev, err := display.NewSH1106SPI(bus, dc, rst, cs, &display.Options{
+	// Chip select is CE0 (GPIO8), driven by the SPI controller: pass nil.
+	dev, err := display.NewSH1106SPI(bus, dc, rst, nil, &display.Options{
 		Width:  128,
 		Height: 64,
 	})
