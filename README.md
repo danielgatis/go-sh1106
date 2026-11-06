@@ -119,6 +119,7 @@ renderer, _ := text.NewRendererWithEmbeddedFont(&text.Config{
     Width:     128,
     Height:    64,
     LineCount: 6,
+    Scale:     1, // 2 or more: each font pixel becomes a sharp block
 })
 
 // Or with custom BDF font file
@@ -126,6 +127,15 @@ renderer, _ := text.NewRenderer("path/to/font.bdf", &text.Config{
     Width:     128,
     Height:    64,
     LineCount: 6,
+})
+
+// Or with any font.Face, such as a TrueType font
+f, _ := opentype.Parse(gomedium.TTF)
+face, _ := opentype.NewFace(f, &opentype.FaceOptions{Size: 12, DPI: 72})
+renderer, _ := text.NewRendererWithFace(face, &text.Config{
+    Width:     128,
+    Height:    64,
+    LineCount: 4,
 })
 ```
 

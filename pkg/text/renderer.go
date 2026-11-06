@@ -15,7 +15,10 @@ import (
 // Renderer handles text rendering on an image canvas
 type Renderer struct {
 	img        *image.RGBA
+	canvas     *image.RGBA // where text is drawn: img, or a smaller one scaled up into it
+	scale      int
 	face       font.Face
+	descent    int
 	width      int
 	height     int
 	lineCount  int
@@ -28,6 +31,11 @@ type Config struct {
 	Width     int
 	Height    int
 	LineCount int
+
+	// Scale enlarges the font by a whole factor, keeping its pixels sharp:
+	// text is drawn on a canvas Scale times smaller and scaled up. 0 or 1:
+	// the font's own size.
+	Scale int
 }
 
 // ConfigError represents a configuration validation error
@@ -56,8 +64,24 @@ func NewRendererWithEmbeddedFont(config *Config) (*Renderer, error) {
 	return newRendererFromBytes(embeddedFontData, config)
 }
 
-// newRendererFromBytes creates a new text renderer from font bytes
+// newRendererFromBytes creates a new text renderer from BDF font bytes
 func newRendererFromBytes(fontBytes []byte, config *Config) (*Renderer, error) {
+	bdfFont, err := bdf.Parse(fontBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewRendererWithFace(bdfFont.NewFace(), config)
+}
+
+// NewRendererWithFace creates a new text renderer with any font face, such
+// as a TrueType font opened with golang.org/x/image/font/opentype. Each line
+// sits on a baseline that leaves room for the face's descent.
+func NewRendererWithFace(face font.Face, config *Config) (*Renderer, error) {
+	if face == nil {
+		return nil, &ConfigError{Field: "Face", Value: face, Message: "face is required"}
+	}
+
 	// Validate configuration
 	if config.Width <= 0 {
 		return nil, &ConfigError{Field: "Width", Value: config.Width, Message: "width must be greater than 0"}
@@ -69,25 +93,31 @@ func newRendererFromBytes(fontBytes []byte, config *Config) (*Renderer, error) {
 		return nil, &ConfigError{Field: "LineCount", Value: config.LineCount, Message: "line count must be non-negative"}
 	}
 
-	bdfFont, err := bdf.Parse(fontBytes)
-	if err != nil {
-		return nil, err
+	scale := max(config.Scale, 1)
+	if config.Scale < 0 || config.Width < scale || config.Height < scale {
+		return nil, &ConfigError{Field: "Scale", Value: config.Scale, Message: "scale must be non-negative and fit the size"}
 	}
-
-	face := bdfFont.NewFace()
 
 	rect := image.Rect(0, 0, config.Width, config.Height)
 	img := image.NewRGBA(rect)
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.Black}, image.Point{}, draw.Src)
 
+	canvas := img
+	if scale > 1 {
+		canvas = image.NewRGBA(image.Rect(0, 0, config.Width/scale, config.Height/scale))
+	}
+
 	lineHeight := 1
 	if config.LineCount > 0 {
-		lineHeight = config.Height / config.LineCount
+		lineHeight = canvas.Bounds().Dy() / config.LineCount
 	}
 
 	return &Renderer{
 		img:        img,
+		canvas:     canvas,
+		scale:      scale,
 		face:       face,
+		descent:    face.Metrics().Descent.Ceil(),
 		width:      config.Width,
 		height:     config.Height,
 		lineCount:  config.LineCount,
@@ -126,10 +156,10 @@ func (r *Renderer) Clear() {
 // redraw redraws the image with all lines
 func (r *Renderer) redraw() {
 	// Clear the canvas
-	draw.Draw(r.img, r.img.Bounds(), &image.Uniform{color.Black}, image.Point{}, draw.Src)
+	draw.Draw(r.canvas, r.canvas.Bounds(), &image.Uniform{color.Black}, image.Point{}, draw.Src)
 
 	d := &font.Drawer{
-		Dst:  r.img,
+		Dst:  r.canvas,
 		Src:  image.NewUniform(color.White),
 		Face: r.face,
 	}
@@ -141,9 +171,27 @@ func (r *Renderer) redraw() {
 
 		d.Dot = fixed.Point26_6{
 			X: fixed.I(0),
-			Y: fixed.I((row+1)*r.lineHeight - 1), // Adjust baseline
+			Y: fixed.I((row+1)*r.lineHeight - r.descent), // Room for descenders
 		}
 		d.DrawString(line)
+	}
+
+	if r.scale > 1 {
+		r.scaleUp()
+	}
+}
+
+// scaleUp copies the canvas into the image, each pixel as a scale x scale
+// block. The edge the canvas does not cover takes its last row and column.
+func (r *Renderer) scaleUp() {
+	cb := r.canvas.Bounds()
+
+	for y := range r.height {
+		sy := min(y/r.scale, cb.Dy()-1)
+		for x := range r.width {
+			sx := min(x/r.scale, cb.Dx()-1)
+			r.img.SetRGBA(x, y, r.canvas.RGBAAt(sx, sy))
+		}
 	}
 }
 
