@@ -33,8 +33,9 @@ go get github.com/danielgatis/go-sh1106
 package main
 
 import (
+    "image"
     "log"
-    
+
     "github.com/danielgatis/go-sh1106/pkg/display"
     "github.com/danielgatis/go-sh1106/pkg/text"
     
@@ -76,7 +77,9 @@ func main() {
         "Go Library",
     })
     
-    dev.Draw(textRenderer.Bounds(), textRenderer.Image(), image.Point{})
+    if err := dev.Draw(textRenderer.Bounds(), textRenderer.Image(), image.Point{}); err != nil {
+        log.Fatal(err)
+    }
 }
 ```
 
@@ -91,6 +94,21 @@ sudo raspi-config
 
 ### Display Package (`pkg/display`)
 SH1106 OLED display driver with SPI support.
+
+```go
+// Draw draws src, from sp, into r of the display, then shows the buffer
+dev.Draw(r, src, image.Point{})
+
+// Or set pixels in the buffer and show it: true is black (unlit)
+dev.SetPixel(10, 10, false)
+dev.Update()
+
+// Dim the panel (0x00 to 0xFF, 0x80 after init)
+dev.SetContrast(0x40)
+
+// Turn the panel off. The next update turns it back on.
+dev.Halt()
+```
 
 ### Text Package (`pkg/text`)
 Text rendering with BDF font support and embedded font option.

@@ -26,10 +26,14 @@ type SH1106 struct {
 
 	rect   image.Rectangle
 	buffer []byte
+
+	halted bool
 }
 
 // Options defines the configuration options for the SH1106 device
 type Options struct {
+	// Width and Height are the panel's size: 128 x 64 for the Waveshare
+	// 1.3inch OLED HAT. Height is a multiple of 8, the panel's page height.
 	Width  int
 	Height int
 }
@@ -42,6 +46,14 @@ type Options struct {
 func NewSH1106SPI(p spi.Port, dc, rst, cs gpio.PinOut, opts *Options) (*SH1106, error) {
 	if dc == nil || rst == nil {
 		return nil, errors.New("display: dc and rst pins are required")
+	}
+
+	if opts == nil || opts.Width <= 0 || opts.Height <= 0 {
+		return nil, errors.New("display: width and height must be greater than 0")
+	}
+
+	if opts.Height%8 != 0 {
+		return nil, errors.New("display: height must be a multiple of 8")
 	}
 
 	speed := physic.Frequency(1.95 * float64(physic.MegaHertz)) // 1.95MHz
@@ -58,6 +70,7 @@ func NewSH1106SPI(p spi.Port, dc, rst, cs gpio.PinOut, opts *Options) (*SH1106, 
 		rect:   image.Rect(0, 0, opts.Width, opts.Height),
 		buffer: make([]byte, (opts.Width*opts.Height)/8),
 	}
+	sh1106.Clear()
 
 	// Initialize display
 	if err := sh1106.init(); err != nil {
@@ -177,8 +190,9 @@ func (d *SH1106) display() error {
 	return nil
 }
 
-// setPixel sets a pixel in the buffer
-func (d *SH1106) setPixel(x, y int, on bool) {
+// setPixel sets a pixel in the buffer. A set bit is black: display inverts
+// the buffer, and the SH1106 lights a pixel for a set bit.
+func (d *SH1106) setPixel(x, y int, black bool) {
 	if x < 0 || x >= d.rect.Dx() || y < 0 || y >= d.rect.Dy() {
 		return
 	}
@@ -187,14 +201,14 @@ func (d *SH1106) setPixel(x, y int, on bool) {
 	bit := y % 8
 	index := page*d.rect.Dx() + x
 
-	if on {
+	if black {
 		d.buffer[index] |= (1 << bit)
 	} else {
 		d.buffer[index] &^= (1 << bit)
 	}
 }
 
-// Clear clears the display buffer
+// Clear clears the display buffer to black
 func (d *SH1106) Clear() {
 	for i := range d.buffer {
 		d.buffer[i] = 0xFF
@@ -217,14 +231,33 @@ func (d *SH1106) ColorModel() color.Model {
 }
 
 // Halt turns off the display. The panel stops driving the OLED but keeps its
-// RAM, so Wake shows the last frame again without a redraw.
+// RAM, so Wake shows the last frame again without a redraw. The next update
+// wakes the panel; Wake does it ahead of time.
 func (d *SH1106) Halt() error {
-	return d.sendCommand(0xAE)
+	if d.halted {
+		return nil
+	}
+
+	if err := d.sendCommand(0xAE); err != nil {
+		return err
+	}
+	d.halted = true
+
+	return nil
 }
 
 // Wake turns the display back on after Halt.
 func (d *SH1106) Wake() error {
-	return d.sendCommand(0xAF)
+	if !d.halted {
+		return nil
+	}
+
+	if err := d.sendCommand(0xAF); err != nil {
+		return err
+	}
+	d.halted = false
+
+	return nil
 }
 
 // SetContrast sets the segment drive current, 0x00 to 0xFF (0x80 after init).
@@ -233,37 +266,38 @@ func (d *SH1106) SetContrast(level byte) error {
 	return d.sendCommand(0x81, level)
 }
 
-// Draw implements display.Drawer
+// Draw implements display.Drawer: it draws src, from sp, into r of the
+// display, then shows the buffer.
 func (d *SH1106) Draw(r image.Rectangle, src image.Image, sp image.Point) error {
-	bounds := src.Bounds()
+	r = r.Intersect(d.rect)
 
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			srcX := x - bounds.Min.X + sp.X
-			srcY := y - bounds.Min.Y + sp.Y
-
-			if srcX >= 0 && srcX < d.rect.Dx() && srcY >= 0 && srcY < d.rect.Dy() {
-				// Convert to grayscale
-				r, g, b, _ := src.At(x, y).RGBA()
-				gray := uint8((r + g + b) / 3 >> 8)
-
-				// Set pixel based on threshold
-				// Pixels darker than 50% are on
-				on := gray < 128
-				d.setPixel(srcX, srcY, on)
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			p := sp.Add(image.Pt(x-r.Min.X, y-r.Min.Y))
+			if !p.In(src.Bounds()) {
+				continue
 			}
+
+			// Pixels darker than 50% are black
+			gray := color.GrayModel.Convert(src.At(p.X, p.Y)).(color.Gray)
+			d.setPixel(x, y, gray.Y < 128)
 		}
 	}
 
-	return d.display()
+	return d.Update()
 }
 
-// SetPixel directly sets a pixel on the display
-func (d *SH1106) SetPixel(x, y int, on bool) {
-	d.setPixel(x, y, on)
+// SetPixel directly sets a pixel on the display buffer
+func (d *SH1106) SetPixel(x, y int, black bool) {
+	d.setPixel(x, y, black)
 }
 
-// Update displays the current buffer to the screen
+// Update displays the current buffer to the screen, waking the panel from
+// Halt
 func (d *SH1106) Update() error {
+	if err := d.Wake(); err != nil {
+		return err
+	}
+
 	return d.display()
 }
