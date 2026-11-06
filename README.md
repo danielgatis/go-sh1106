@@ -119,6 +119,7 @@ renderer, _ := text.NewRendererWithEmbeddedFont(&text.Config{
     Width:     128,
     Height:    64,
     LineCount: 6,
+    Scale:     1, // 2 or more: each font pixel becomes a sharp block
 })
 
 // Or with custom BDF font file

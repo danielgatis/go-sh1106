@@ -133,3 +133,43 @@ func TestEmbeddedFontData(t *testing.T) {
 		t.Errorf("Expected BDF file to start with 'STARTFONT ', got '%s'", header)
 	}
 }
+
+func TestScale_EnlargesEachPixelIntoABlock(t *testing.T) {
+	small, err := NewRendererWithEmbeddedFont(&Config{Width: 30, Height: 20, LineCount: 2})
+	if err != nil {
+		t.Fatalf("NewRendererWithEmbeddedFont: %v", err)
+	}
+
+	big, err := NewRendererWithEmbeddedFont(&Config{Width: 92, Height: 61, LineCount: 2, Scale: 3})
+	if err != nil {
+		t.Fatalf("NewRendererWithEmbeddedFont: %v", err)
+	}
+
+	small.SetTexts([]string{"Hi!", "42"})
+	big.SetTexts([]string{"Hi!", "42"})
+
+	if big.Bounds() != image.Rect(0, 0, 92, 61) {
+		t.Fatalf("bounds %v, want the configured size", big.Bounds())
+	}
+
+	// The edge past 90 x 60 repeats the last canvas row and column
+	for y := range 61 {
+		for x := range 92 {
+			want := small.Image().At(min(x/3, 29), min(y/3, 19))
+			if got := big.Image().At(x, y); got != want {
+				t.Fatalf("pixel (%d,%d) is %v, want %v", x, y, got, want)
+			}
+		}
+	}
+}
+
+func TestScale_Invalid(t *testing.T) {
+	for _, cfg := range []*Config{
+		{Width: 10, Height: 10, Scale: -1},
+		{Width: 2, Height: 10, Scale: 3},
+	} {
+		if _, err := NewRendererWithEmbeddedFont(cfg); err == nil {
+			t.Errorf("expected an error for %+v", cfg)
+		}
+	}
+}
