@@ -3,6 +3,7 @@ package display
 import (
 	"bytes"
 	"image"
+	"image/color"
 	"testing"
 
 	"periph.io/x/conn/v3/gpio"
@@ -160,5 +161,96 @@ func TestHaltAndWake(t *testing.T) {
 
 	if w := writes(port); len(w) != 2 || w[0][0] != 0xAE || w[1][0] != 0xAF {
 		t.Fatalf("got %v, want [[0xAE] [0xAF]]", w)
+	}
+}
+
+func TestNewSH1106SPI_RejectsBadSize(t *testing.T) {
+	pin := &gpiotest.Pin{}
+
+	for _, opts := range []*Options{nil, {}, {Width: 128, Height: 60}} {
+		if _, err := NewSH1106SPI(&spitest.Record{}, pin, pin, nil, opts); err == nil {
+			t.Errorf("expected an error for %+v", opts)
+		}
+	}
+}
+
+func TestNewSH1106SPI_StartsBlack(t *testing.T) {
+	dev, port := newTestDisplay(t, nil)
+	port.Ops = nil
+
+	if err := dev.Update(); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Every page write is all zeros once inverted: no pixel lit
+	for _, w := range writes(port) {
+		if len(w) == 128 && !bytes.Equal(w, make([]byte, 128)) {
+			t.Fatalf("page data %v, want all unlit", w)
+		}
+	}
+}
+
+func TestSetPixel_TrueIsBlack(t *testing.T) {
+	dev, _ := newTestDisplay(t, nil)
+
+	dev.SetPixel(0, 0, false)
+	if got := dev.buffer[0]; got != 0xFE {
+		t.Fatalf("white pixel left byte %#x, want 0xfe", got)
+	}
+
+	dev.SetPixel(0, 0, true)
+	if got := dev.buffer[0]; got != 0xFF {
+		t.Fatalf("black pixel left byte %#x, want 0xff", got)
+	}
+}
+
+func TestDraw_HonoursRectangleAndSourcePoint(t *testing.T) {
+	dev, _ := newTestDisplay(t, nil)
+
+	src := image.NewGray(image.Rect(0, 0, 20, 20))
+	src.SetGray(10, 10, color.Gray{Y: 0xFF})
+
+	// Draw src from (10,10) into (8,0)-(16,8): the white pixel lands at (8,0)
+	if err := dev.Draw(image.Rect(8, 0, 16, 8), src, image.Pt(10, 10)); err != nil {
+		t.Fatalf("Draw: %v", err)
+	}
+
+	if got := dev.buffer[8]; got != 0xFE {
+		t.Errorf("column 8 is %#x, want 0xfe", got)
+	}
+	if got := dev.buffer[9]; got != 0xFF {
+		t.Errorf("column 9 is %#x, want 0xff", got)
+	}
+}
+
+func TestHalt_Idempotent(t *testing.T) {
+	dev, port := newTestDisplay(t, nil)
+	port.Ops = nil
+
+	for range 2 {
+		if err := dev.Halt(); err != nil {
+			t.Fatalf("Halt: %v", err)
+		}
+	}
+
+	if w := writes(port); len(w) != 1 || w[0][0] != 0xAE {
+		t.Fatalf("got %v, want a single [0xAE]", w)
+	}
+}
+
+func TestUpdate_WakesFromHalt(t *testing.T) {
+	dev, port := newTestDisplay(t, nil)
+
+	if err := dev.Halt(); err != nil {
+		t.Fatalf("Halt: %v", err)
+	}
+	port.Ops = nil
+
+	if err := dev.Update(); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	if w := writes(port); len(w) == 0 || !bytes.Equal(w[0], []byte{0xAF}) {
+		t.Fatalf("first write %v, want display on [0xAF]", w)
 	}
 }
