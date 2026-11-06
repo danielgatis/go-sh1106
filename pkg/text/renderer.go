@@ -18,6 +18,7 @@ type Renderer struct {
 	canvas     *image.RGBA // where text is drawn: img, or a smaller one scaled up into it
 	scale      int
 	face       font.Face
+	descent    int
 	width      int
 	height     int
 	lineCount  int
@@ -63,8 +64,24 @@ func NewRendererWithEmbeddedFont(config *Config) (*Renderer, error) {
 	return newRendererFromBytes(embeddedFontData, config)
 }
 
-// newRendererFromBytes creates a new text renderer from font bytes
+// newRendererFromBytes creates a new text renderer from BDF font bytes
 func newRendererFromBytes(fontBytes []byte, config *Config) (*Renderer, error) {
+	bdfFont, err := bdf.Parse(fontBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewRendererWithFace(bdfFont.NewFace(), config)
+}
+
+// NewRendererWithFace creates a new text renderer with any font face, such
+// as a TrueType font opened with golang.org/x/image/font/opentype. Each line
+// sits on a baseline that leaves room for the face's descent.
+func NewRendererWithFace(face font.Face, config *Config) (*Renderer, error) {
+	if face == nil {
+		return nil, &ConfigError{Field: "Face", Value: face, Message: "face is required"}
+	}
+
 	// Validate configuration
 	if config.Width <= 0 {
 		return nil, &ConfigError{Field: "Width", Value: config.Width, Message: "width must be greater than 0"}
@@ -80,13 +97,6 @@ func newRendererFromBytes(fontBytes []byte, config *Config) (*Renderer, error) {
 	if config.Scale < 0 || config.Width < scale || config.Height < scale {
 		return nil, &ConfigError{Field: "Scale", Value: config.Scale, Message: "scale must be non-negative and fit the size"}
 	}
-
-	bdfFont, err := bdf.Parse(fontBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	face := bdfFont.NewFace()
 
 	rect := image.Rect(0, 0, config.Width, config.Height)
 	img := image.NewRGBA(rect)
@@ -107,6 +117,7 @@ func newRendererFromBytes(fontBytes []byte, config *Config) (*Renderer, error) {
 		canvas:     canvas,
 		scale:      scale,
 		face:       face,
+		descent:    face.Metrics().Descent.Ceil(),
 		width:      config.Width,
 		height:     config.Height,
 		lineCount:  config.LineCount,
@@ -160,7 +171,7 @@ func (r *Renderer) redraw() {
 
 		d.Dot = fixed.Point26_6{
 			X: fixed.I(0),
-			Y: fixed.I((row+1)*r.lineHeight - 1), // Adjust baseline
+			Y: fixed.I((row+1)*r.lineHeight - r.descent), // Room for descenders
 		}
 		d.DrawString(line)
 	}

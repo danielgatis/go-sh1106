@@ -3,6 +3,9 @@ package text
 import (
 	"image"
 	"testing"
+
+	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/opentype"
 )
 
 func TestTextRendererConfig(t *testing.T) {
@@ -170,6 +173,52 @@ func TestScale_Invalid(t *testing.T) {
 	} {
 		if _, err := NewRendererWithEmbeddedFont(cfg); err == nil {
 			t.Errorf("expected an error for %+v", cfg)
+		}
+	}
+}
+
+func TestNewRendererWithFace_RequiresFace(t *testing.T) {
+	if _, err := NewRendererWithFace(nil, &Config{Width: 10, Height: 10}); err == nil {
+		t.Fatal("expected an error without a face")
+	}
+}
+
+func TestNewRendererWithFace_KeepsDescenders(t *testing.T) {
+	f, err := opentype.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatalf("opentype.Parse: %v", err)
+	}
+
+	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: 16, DPI: 72})
+	if err != nil {
+		t.Fatalf("opentype.NewFace: %v", err)
+	}
+
+	r, err := NewRendererWithFace(face, &Config{Width: 60, Height: 40, LineCount: 2})
+	if err != nil {
+		t.Fatalf("NewRendererWithFace: %v", err)
+	}
+	r.SetTexts([]string{"gy"})
+
+	bg := r.Image().At(59, 39)
+	baseline := 20 - face.Metrics().Descent.Ceil()
+
+	inked := func(y int) bool {
+		for x := range 60 {
+			if r.Image().At(x, y) != bg {
+				return true
+			}
+		}
+		return false
+	}
+
+	// The tails of g and y reach below the baseline, inside the first line
+	if !inked(baseline + 2) {
+		t.Fatalf("no ink below the baseline at row %d: descenders cut off", baseline+2)
+	}
+	for y := 20; y < 40; y++ {
+		if inked(y) {
+			t.Fatalf("ink at row %d spilled into the second line", y)
 		}
 	}
 }

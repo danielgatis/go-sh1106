@@ -128,6 +128,15 @@ renderer, _ := text.NewRenderer("path/to/font.bdf", &text.Config{
     Height:    64,
     LineCount: 6,
 })
+
+// Or with any font.Face, such as a TrueType font
+f, _ := opentype.Parse(gomedium.TTF)
+face, _ := opentype.NewFace(f, &opentype.FaceOptions{Size: 12, DPI: 72})
+renderer, _ := text.NewRendererWithFace(face, &text.Config{
+    Width:     128,
+    Height:    64,
+    LineCount: 4,
+})
 ```
 
 ### Joystick Package (`pkg/joystick`)
